@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from app.database import SessionLocal
 from app.services import job_service
+from app.services.resource_manager import resource_manager # <-- IMPORT THE NEW MANAGER
 from app import models
 
 def are_dependencies_met(job: models.Job) -> bool:
@@ -25,36 +26,44 @@ async def process_jobs():
     db = SessionLocal()
     job_to_run = None
     try:
-        # 1. Fetch a list of candidate jobs
         candidate_jobs = job_service.get_candidate_jobs(db)
 
-        # 2. Find the first job whose dependencies are met
         for job in candidate_jobs:
-            if are_dependencies_met(job):
+            if not are_dependencies_met(job):
+                continue # Skip to the next job
+
+            # --- NEW RESOURCE CHECK ---
+            cpu_req = job.resource_requirements.get("cpu_units", 0)
+            mem_req = job.resource_requirements.get("memory_mb", 0)
+
+            if resource_manager.allocate(cpu_req, mem_req):
                 job_to_run = job
-                break # Exit the loop once we find a runnable job
+                break # We found a job that fits, so we'll run it
+            else:
+                print(f"WORKER: Not enough resources for job {job.job_id}. Skipping.")
         
-        # 3. If a runnable job was found, execute it
         if job_to_run:
-            print(f"WORKER: Found job {job_to_run.job_id} to run. Changing status to RUNNING.")
+            cpu_req = job_to_run.resource_requirements.get("cpu_units", 0)
+            mem_req = job_to_run.resource_requirements.get("memory_mb", 0)
             
-            job_to_run.status = models.JobStatus.RUNNING
-            job_to_run.started_at = datetime.datetime.utcnow()
-            db.commit()
-            db.refresh(job_to_run)
+            try:
+                print(f"WORKER: Found job {job_to_run.job_id} to run. Changing status to RUNNING.")
+                job_to_run.status = models.JobStatus.RUNNING
+                job_to_run.started_at = datetime.datetime.utcnow()
+                db.commit()
 
-            # Simulate work
-            print(f"WORKER: Executing job {job_to_run.job_id}...")
-            await asyncio.sleep(10)
+                print(f"WORKER: Executing job {job_to_run.job_id}...")
+                await asyncio.sleep(15) # Simulate a longer task
 
-            # Mark as successful
-            job_to_run.status = models.JobStatus.SUCCESS
-            job_to_run.completed_at = datetime.datetime.utcnow()
-            db.commit()
-            
-            print(f"WORKER: Job {job_to_run.job_id} completed successfully.")
+                job_to_run.status = models.JobStatus.SUCCESS
+                job_to_run.completed_at = datetime.datetime.utcnow()
+                db.commit()
+                print(f"WORKER: Job {job_to_run.job_id} completed successfully.")
+            finally:
+                # CRITICAL: Always release resources, even if the job fails.
+                resource_manager.release(cpu_req, mem_req)
         else:
-            print("WORKER: No jobs are ready to run.")
+            print("WORKER: No jobs are ready to run or fit available resources.")
             
     finally:
         db.close()
