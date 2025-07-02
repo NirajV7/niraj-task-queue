@@ -81,3 +81,14 @@ async def stream_job_updates(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         print("WebSocket client disconnected from stream.")
+        
+@router.get("/{job_id}/logs", response_model=List[schemas.JobLogResponse])
+def get_job_logs(job_id: str, db: Session = Depends(get_db)):
+    """
+    Get the execution logs for a specific job.
+    """
+    db_job = job_service.get_job(db=db, job_id=job_id)
+    if db_job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return db_job.logs

@@ -26,3 +26,10 @@ class JobResponse(BaseModel):
     # This tells Pydantic to read the data even if it's an ORM model
     class Config:
         from_attributes = True
+        
+class JobLogResponse(BaseModel):
+    timestamp: datetime.datetime
+    message: str
+
+    class Config:
+        from_attributes = True

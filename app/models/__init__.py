@@ -1,1 +1,1 @@
-from .job import Job, JobDependency, JobStatus, PriorityLevel
+from .job import Job, JobDependency, JobStatus, PriorityLevel, JobLog

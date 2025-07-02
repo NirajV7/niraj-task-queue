@@ -18,6 +18,11 @@ from app import models
 # --- NEW: Function to handle job failures and retries ---
 def handle_job_failure(job: models.Job, db: Session, error: Exception):
     """Handles the logic for when a job fails, including retries."""
+    
+    # --- ADD LOGGING ---
+    error_message = f"Job failed with error: {error}"
+    db.add(models.JobLog(job_id=job.id, message=error_message))
+    
     job.last_error = str(error)
     job.current_attempt += 1
     
@@ -42,12 +47,17 @@ def handle_job_failure(job: models.Job, db: Session, error: Exception):
 
 async def execute_job(job: models.Job, db: Session):
     """Simulates the actual execution of a job."""
-    print(f"WORKER: Executing job {job.job_id} (Type: {job.type})...")
-    
+
+    # --- ADD LOGGING ---
+    log_message = f"Executing job {job.job_id} (Type: {job.type})..."
+    print(log_message)
+    db.add(models.JobLog(job_id=job.id, message=log_message))
+    db.commit()
+
     # Simulate different job behaviors based on payload for testing
     if job.payload and job.payload.get("should_fail"):
         raise ValueError("This job was configured to fail deliberately!")
-    
+
     duration = job.payload.get("duration_seconds", 15) if job.payload else 15
     await asyncio.sleep(duration)
 
