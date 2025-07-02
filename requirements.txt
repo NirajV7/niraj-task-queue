@@ -1,0 +1,15 @@
+# FastAPI framework for building the API
+fastapi
+
+# ASGI server to run the application
+uvicorn[standard]
+
+# ORM for interacting with the PostgreSQL database
+sqlalchemy
+psycopg2-binary
+
+# Tool for handling database schema migrations
+alembic
+
+# For data validation and settings management
+pydantic
