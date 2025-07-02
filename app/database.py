@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 SQLALCHEMY_DATABASE_URL = "postgresql://user:password@db/task_queue"
 
 # The engine is the entry point to the database.
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True)
 
 # Each instance of the SessionLocal class will be a new database session.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
