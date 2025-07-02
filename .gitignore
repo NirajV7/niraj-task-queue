@@ -68,3 +68,4 @@ test_resources.py
 test_failures.py
 test_cancel.py
 websocket_client.py
+test_idempotency.py

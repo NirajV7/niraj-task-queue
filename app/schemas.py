@@ -7,6 +7,7 @@ from .models.job import JobStatus, PriorityLevel
 
 # Pydantic model for the request body when creating a new job
 class JobCreate(BaseModel):
+    idempotency_key: Optional[str] = None
     type: str = Field(..., example="data_export")
     priority: PriorityLevel = Field(default=PriorityLevel.NORMAL, example="normal")
     payload: Optional[Dict[str, Any]] = Field(None, example={"user_id": 123, "format": "csv"})

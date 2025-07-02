@@ -34,6 +34,7 @@ class Job(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     job_id = Column(String, unique=True, index=True, nullable=False)
+    idempotency_key = Column(String, unique=True, index=True, nullable=True)
     type = Column(String, nullable=False, index=True)
     priority = Column(SAEnum(PriorityLevel), default=PriorityLevel.NORMAL, nullable=False)
     status = Column(SAEnum(JobStatus), default=JobStatus.PENDING, nullable=False, index=True)
