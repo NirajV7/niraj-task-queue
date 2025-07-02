@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from .. import models, schemas
 import uuid
-from typing import Optional # <-- IMPORT OPTIONAL
+from typing import Optional, List # <-- IMPORT OPTIONAL
 from fastapi import HTTPException
 def create_job(db: Session, job_in: schemas.JobCreate) -> models.Job:
     """Creates a new job in the database."""
@@ -39,11 +39,13 @@ def get_job(db: Session, job_id: str) -> Optional[models.Job]: # <-- USE OPTIONA
     """Retrieves a single job by its ID."""
     return db.query(models.Job).filter(models.Job.job_id == job_id).first()
 
-def get_pending_job_to_run(db: Session) -> Optional[models.Job]: # <-- AND HERE
-    """Finds the highest priority, pending job that is ready to run."""
+def get_candidate_jobs(db: Session, limit: int = 10) -> List[models.Job]:
+    """
+    Finds a list of the highest priority, pending jobs that are ready to run.
+    """
     return db.query(models.Job).filter(
         models.Job.status == models.JobStatus.PENDING
     ).order_by(
         models.Job.priority.desc(),
         models.Job.created_at.asc()
-    ).first()
+    ).limit(limit).all()

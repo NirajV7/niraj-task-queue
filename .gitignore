@@ -63,3 +63,4 @@ docker-compose.override.yml
 
 # Local test scripts
 test_priority.py
+test_dependency.py
