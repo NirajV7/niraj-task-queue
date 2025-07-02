@@ -8,6 +8,7 @@ from sqlalchemy import (
     JSON,
     Enum as SAEnum,
     ForeignKey,
+    Text
 )
 from sqlalchemy.orm import relationship
 from ..database import Base
@@ -41,6 +42,11 @@ class Job(Base):
     resource_requirements = Column(JSON, nullable=True)
     retry_config = Column(JSON, nullable=True)
     timeout_seconds = Column(Integer, nullable=True)
+    
+     # --- NEW FIELDS FOR FAILURE HANDLING ---
+    last_error = Column(Text, nullable=True) # To store the last error message
+    current_attempt = Column(Integer, default=0, nullable=False, server_default='0')
+    run_at = Column(DateTime, nullable=True, index=True) # For scheduling retries
     
     # Timestamps for tracking
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

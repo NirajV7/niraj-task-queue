@@ -65,3 +65,4 @@ docker-compose.override.yml
 test_priority.py
 test_dependency.py
 test_resources.py
+test_failures.py

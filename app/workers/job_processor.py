@@ -2,71 +2,112 @@
 
 import asyncio
 import datetime
+import traceback
 import sys
 import os
 
+# This is still needed to ensure the 'app' module is on the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.services import job_service
-from app.services.resource_manager import resource_manager # <-- IMPORT THE NEW MANAGER
+from app.services.resource_manager import resource_manager
 from app import models
 
-def are_dependencies_met(job: models.Job) -> bool:
-    """Check if all dependencies for a job are met."""
-    for dep in job.dependencies:
-        if dep.status != models.JobStatus.SUCCESS:
-            print(f"WORKER: Job {job.job_id} is waiting for dependency {dep.job_id} (status: {dep.status.value})")
-            return False
-    return True
+# --- NEW: Function to handle job failures and retries ---
+def handle_job_failure(job: models.Job, db: Session, error: Exception):
+    """Handles the logic for when a job fails, including retries."""
+    job.last_error = str(error)
+    job.current_attempt += 1
+    
+    max_attempts = job.retry_config.get("max_attempts", 1) if job.retry_config else 1
+
+    if job.current_attempt < max_attempts:
+        backoff_multiplier = job.retry_config.get("backoff_multiplier", 2) if job.retry_config else 2
+        # Calculate delay in seconds. e.g., 5s, 10s, 20s
+        delay_seconds = 5 * (backoff_multiplier ** (job.current_attempt))
+        
+        job.run_at = datetime.datetime.utcnow() + datetime.timedelta(seconds=delay_seconds)
+        job.status = models.JobStatus.PENDING # Set back to pending for the next attempt
+        print(f"WORKER: Job {job.job_id} failed on attempt {job.current_attempt}. Rescheduling to run in {delay_seconds} seconds.")
+    else:
+        # Max attempts reached, fail permanently
+        job.status = models.JobStatus.FAILED
+        job.completed_at = datetime.datetime.utcnow()
+        print(f"WORKER: Job {job.job_id} has failed permanently after {max_attempts} attempts.")
+    
+    db.commit()
+
+
+async def execute_job(job: models.Job, db: Session):
+    """Simulates the actual execution of a job."""
+    print(f"WORKER: Executing job {job.job_id} (Type: {job.type})...")
+    
+    # Simulate different job behaviors based on payload for testing
+    if job.payload and job.payload.get("should_fail"):
+        raise ValueError("This job was configured to fail deliberately!")
+    
+    duration = job.payload.get("duration_seconds", 15) if job.payload else 15
+    await asyncio.sleep(duration)
+
 
 async def process_jobs():
-    """The main worker function that finds and runs a ready job."""
-    print("WORKER: Checking for pending jobs...")
+    """Finds and runs a ready job, with full error, timeout, and retry handling."""
     db = SessionLocal()
-    job_to_run = None
     try:
         candidate_jobs = job_service.get_candidate_jobs(db)
+        if not candidate_jobs:
+            print("WORKER: No pending jobs found.")
+            return
 
+        job_to_run = None
         for job in candidate_jobs:
-            if not are_dependencies_met(job):
-                continue # Skip to the next job
+            if not job_service.are_dependencies_met(job):
+                continue
 
-            # --- NEW RESOURCE CHECK ---
-            cpu_req = job.resource_requirements.get("cpu_units", 0)
-            mem_req = job.resource_requirements.get("memory_mb", 0)
-
+            cpu_req = job.resource_requirements.get("cpu_units", 0) if job.resource_requirements else 0
+            mem_req = job.resource_requirements.get("memory_mb", 0) if job.resource_requirements else 0
+            
             if resource_manager.allocate(cpu_req, mem_req):
                 job_to_run = job
-                break # We found a job that fits, so we'll run it
+                break 
             else:
                 print(f"WORKER: Not enough resources for job {job.job_id}. Skipping.")
         
-        if job_to_run:
-            cpu_req = job_to_run.resource_requirements.get("cpu_units", 0)
-            mem_req = job_to_run.resource_requirements.get("memory_mb", 0)
-            
-            try:
-                print(f"WORKER: Found job {job_to_run.job_id} to run. Changing status to RUNNING.")
-                job_to_run.status = models.JobStatus.RUNNING
-                job_to_run.started_at = datetime.datetime.utcnow()
-                db.commit()
-
-                print(f"WORKER: Executing job {job_to_run.job_id}...")
-                await asyncio.sleep(15) # Simulate a longer task
-
-                job_to_run.status = models.JobStatus.SUCCESS
-                job_to_run.completed_at = datetime.datetime.utcnow()
-                db.commit()
-                print(f"WORKER: Job {job_to_run.job_id} completed successfully.")
-            finally:
-                # CRITICAL: Always release resources, even if the job fails.
-                resource_manager.release(cpu_req, mem_req)
-        else:
+        if not job_to_run:
             print("WORKER: No jobs are ready to run or fit available resources.")
-            
+            return
+
+        # We found a job, now execute it with failure handling
+        cpu_req = job_to_run.resource_requirements.get("cpu_units", 0) if job_to_run.resource_requirements else 0
+        mem_req = job_to_run.resource_requirements.get("memory_mb", 0) if job_to_run.resource_requirements else 0
+        
+        try:
+            print(f"WORKER: Starting job {job_to_run.job_id}. Changing status to RUNNING.")
+            job_to_run.status = models.JobStatus.RUNNING
+            job_to_run.started_at = datetime.datetime.utcnow()
+            job_to_run.current_attempt += 1
+            db.commit()
+
+            timeout = job_to_run.timeout_seconds or 300 # Default 5-min timeout
+            await asyncio.wait_for(execute_job(job_to_run, db), timeout=timeout)
+
+            job_to_run.status = models.JobStatus.SUCCESS
+            print(f"WORKER: Job {job_to_run.job_id} completed successfully.")
+
+        except Exception as e:
+            print(f"WORKER: An error occurred while running job {job_to_run.job_id}: {e}")
+            traceback.print_exc()
+            handle_job_failure(job_to_run, db, e)
+        finally:
+            job_to_run.completed_at = datetime.datetime.utcnow()
+            db.commit()
+            resource_manager.release(cpu_req, mem_req)
+
     finally:
         db.close()
+
 
 async def main():
     """The main loop that runs the worker process periodically."""
