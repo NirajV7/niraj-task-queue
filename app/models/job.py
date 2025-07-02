@@ -21,12 +21,11 @@ class JobStatus(str, enum.Enum):
     CANCELLED = "cancelled"
     BLOCKED = "blocked" # For jobs waiting on dependencies
 
-class PriorityLevel(int, enum.Enum):
-    # Using integers allows for easy sorting. Higher number = higher priority.
-    CRITICAL = 4
-    HIGH = 3
-    NORMAL = 2
-    LOW = 1
+class PriorityLevel(str, enum.Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    NORMAL = "normal"
+    LOW = "low"
 
 class Job(Base):
     __tablename__ = "jobs"
