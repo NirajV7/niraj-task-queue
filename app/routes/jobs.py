@@ -1,17 +1,22 @@
 # In app/routes/jobs.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..services import job_service # Import the new service
 from ..database import get_db
 from typing import List, Optional
+import asyncio
+from ..services.connection_manager import manager
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 @router.post("/", response_model=schemas.JobResponse, status_code=201)
-def submit_job(job_in: schemas.JobCreate, db: Session = Depends(get_db)):
+async def submit_job(job_in: schemas.JobCreate, db: Session = Depends(get_db)): #<-- Changed to async
     """Submit a new job to the queue."""
-    return job_service.create_job(db=db, job_in=job_in)
+    new_job = job_service.create_job(db=db, job_in=job_in)
+    # Broadcast the update to all connected clients
+    await manager.broadcast(f"Job {new_job.job_id} created with status: {new_job.status.value}")
+    return new_job
 
 @router.get("/{job_id}", response_model=schemas.JobResponse)
 def get_job_details(job_id: str, db: Session = Depends(get_db)):
@@ -42,7 +47,7 @@ def list_jobs(
     return query.order_by(models.Job.created_at.desc()).limit(limit).all()
 
 @router.patch("/{job_id}/cancel", response_model=schemas.JobResponse)
-def cancel_job(job_id: str, db: Session = Depends(get_db)):
+async def cancel_job(job_id: str, db: Session = Depends(get_db)): #<-- Changed to async
     """
     Cancel a job if it is in a pending state.
     """
@@ -50,15 +55,29 @@ def cancel_job(job_id: str, db: Session = Depends(get_db)):
     if db_job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # You can only cancel a pending job
     if db_job.status != models.JobStatus.PENDING:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot cancel job with status '{db_job.status.value}'. Only pending jobs can be canceled."
+            detail=f"Cannot cancel job with status '{db_job.status.value}'."
         )
 
     db_job.status = models.JobStatus.CANCELLED
     db.commit()
     db.refresh(db_job)
-
+    
+    # Broadcast the update to all connected clients
+    await manager.broadcast(f"Job {db_job.job_id} status changed to: {db_job.status.value}")
     return db_job
+
+@router.websocket("/stream")
+async def stream_job_updates(websocket: WebSocket):
+    await manager.connect(websocket)
+    print("WebSocket client connected to stream.")
+    try:
+        while True:
+            # This loop keeps the connection alive.
+            # The client will receive broadcasts sent from other parts of the app.
+            await asyncio.sleep(60)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        print("WebSocket client disconnected from stream.")
