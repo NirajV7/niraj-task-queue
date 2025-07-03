@@ -2,7 +2,7 @@
 
 import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from .models.job import JobStatus, PriorityLevel
 
 # Pydantic model for the request body when creating a new job
@@ -20,13 +20,13 @@ class JobCreate(BaseModel):
 # Pydantic model for the data sent back by the API
 class JobResponse(BaseModel):
     job_id: str
+    type: str
     status: JobStatus
     created_at: datetime.datetime
     priority: PriorityLevel
 
-    # This tells Pydantic to read the data even if it's an ORM model
-    class Config:
-        from_attributes = True
+    # This is the new way to set ORM mode in Pydantic V2
+    model_config = ConfigDict(from_attributes=True)
         
 class JobLogResponse(BaseModel):
     timestamp: datetime.datetime

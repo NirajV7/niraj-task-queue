@@ -13,3 +13,9 @@ alembic
 
 # For data validation and settings management
 pydantic
+
+# Testing
+pytest
+httpx==0.23.0
+pytest-asyncio
+trio==0.22.0
